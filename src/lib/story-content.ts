@@ -20,6 +20,8 @@ export interface CopySegment {
 export interface StorySlideContent {
   id: number;
   aura: Aura;
+  /** The card's name alone, e.g. "HOUSING GRIND"; the eyebrow adds its number and years. */
+  title: string;
   eyebrow: string;
   heroStat: string;
   heroCaption: string;
@@ -64,14 +66,20 @@ function dollarSlide({ result, thenYear }: SlideContext, card: Card<1>) {
 
 const roundToTenth = (value: number) => Math.round(value * 10) / 10;
 
-function housingSlide({ thenYear }: SlideContext, card: Card<2>) {
+function housingSlide({ result, thenYear }: SlideContext, card: Card<2>) {
   // Derived from the rounded figures quoted in the copy, so "6.7 vs 5.9" reads as "+0.8", never "+0.9".
   const shownExtraYears = roundToTenth(card.yearsToSaveNow) - roundToTenth(card.yearsToSaveThen);
   const isHarder = shownExtraYears >= 0;
+  const yearsNow = emphasis(`${formatOneDecimal(card.yearsToSaveNow)} years`);
+  const peer = madLibs`A ${String(thenYear)} peer needed ${emphasis(formatOneDecimal(card.yearsToSaveThen))}.`;
+  const copy =
+    card.yearsUntilWorking > 0
+      ? madLibs`Starting work in ${emphasis(String(result.meta.workStartYear))}, then saving 15% toward a 20% down payment, takes you ${yearsNow}. `
+      : madLibs`Saving 15% toward a 20% down payment takes you ${yearsNow}. `;
   return {
     heroStat: `${formatSignedYears(shownExtraYears)} YRS`,
-    heroCaption: `${isHarder ? "more" : "fewer"} years saving for a starter home`,
-    copy: madLibs`Saving 15% toward a 20% down payment takes you ${emphasis(`${formatOneDecimal(card.yearsToSaveNow)} years`)}. A ${String(thenYear)} peer needed ${emphasis(formatOneDecimal(card.yearsToSaveThen))}.`,
+    heroCaption: `${isHarder ? "more" : "fewer"} years to a starter home`,
+    copy: [...copy, ...peer],
     source: sourceLine("Census/HUD home prices, BLS earnings"),
   };
 }
@@ -155,6 +163,7 @@ export function buildStorySlides(result: ComparisonResult): StorySlideContent[] 
   return bodies.map((body, index) => ({
     id: index + 1,
     aura: result.cards[index].verdict.aura,
+    title: SLIDE_TITLES[index],
     eyebrow: `${String(index + 1).padStart(2, "0")} / ${SLIDE_TITLES[index]} • ${context.thenYear} VS ${context.nowYear}`,
     ...body,
   }));

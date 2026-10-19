@@ -35,6 +35,18 @@ describe("inputFromMeta", () => {
     expect(inputFromMeta(meta)).toEqual(customInput);
   });
 
+  it("round-trips a student with a known parent", () => {
+    const studentInput: ComparatorInput = {
+      birthYear: 2005,
+      parentBirthYear: 1972,
+      employment: "student",
+      income: 58_000,
+      workStartYear: 2029,
+      comparisonMode: "parent_peer",
+    };
+    expect(inputFromMeta(compareGenerations(studentInput, SEED_METRICS_TABLE).meta)).toEqual(studentInput);
+  });
+
   it("omits the custom year for preset modes", () => {
     const presetInput: ComparatorInput = { birthYear: 1996, income: 65_000, comparisonMode: "age_25" };
     expect(inputFromMeta(compareGenerations(presetInput, SEED_METRICS_TABLE).meta)).toEqual(presetInput);

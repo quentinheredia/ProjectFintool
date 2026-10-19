@@ -3,7 +3,7 @@
 import Link from "next/link";
 import useEmblaCarousel from "embla-carousel-react";
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
-import { ChevronLeft, ChevronRight, Pause, Play, Share2, X } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight, Pause, Play, Share2, X } from "lucide-react";
 import { AURA_THEMES } from "@/lib/aura";
 import { inputFromMeta, type ComparisonResult } from "@/lib/comparator-engine";
 import type { StorySlideContent } from "@/lib/story-content";
@@ -18,9 +18,30 @@ const ROUND_CONTROL_CLASS =
   "flex size-8 items-center justify-center rounded-full bg-ink/12 text-ink backdrop-blur-md transition hover:bg-ink/20 focus-visible:outline-2 focus-visible:outline-ink";
 const INTERACTIVE_SELECTOR = "button, a, select, input, label, [data-interactive]";
 
+/** Where the story leads once the last card is reached. */
+export interface StoryFinale {
+  label: string;
+  href: string;
+}
+
 interface StoryCarouselProps {
   result: ComparisonResult;
   slides: StorySlideContent[];
+  finale: StoryFinale;
+  /** A short label beside the controls, e.g. "Sample". */
+  note?: string;
+}
+
+function FinaleLink({ label, href }: StoryFinale) {
+  return (
+    <Link
+      href={href}
+      className="flex h-12 items-center justify-center gap-2 rounded-full bg-accent px-6 text-base font-semibold text-on-accent transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink active:scale-[0.98]"
+    >
+      {label}
+      <ArrowRight className="size-4" strokeWidth={2.25} aria-hidden />
+    </Link>
+  );
 }
 
 function ProgressSegments({
@@ -77,7 +98,7 @@ function NavButton({ direction, onClick, disabled }: { direction: "previous" | "
   );
 }
 
-export function StoryCarousel({ result, slides }: StoryCarouselProps) {
+export function StoryCarousel({ result, slides, finale, note }: StoryCarouselProps) {
   const [emblaRef, emblaApi] = useEmblaCarousel({
     watchDrag: (_, event) => !(event.target instanceof Element && event.target.closest("[data-no-drag]")),
   });
@@ -171,7 +192,11 @@ export function StoryCarousel({ result, slides }: StoryCarouselProps) {
                   inert={index !== selected}
                   className="h-full min-w-0 flex-[0_0_100%]"
                 >
-                  <StorySlide slide={slide} result={result} />
+                  <StorySlide
+                    slide={slide}
+                    result={result}
+                    action={index === lastIndex ? <FinaleLink {...finale} /> : undefined}
+                  />
                 </div>
               ))}
             </div>
@@ -187,7 +212,9 @@ export function StoryCarousel({ result, slides }: StoryCarouselProps) {
             />
             <div className="pointer-events-auto mt-3 flex items-center gap-2">
               <ModeSwitcher meta={meta} />
-              <span className="flex-1" />
+              <span className="min-w-0 flex-1 truncate text-center font-mono text-[10px] tracking-[0.12em] text-ink-muted uppercase">
+                {note}
+              </span>
               {canAutoplay && (
                 <button
                   type="button"

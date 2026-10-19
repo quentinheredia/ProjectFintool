@@ -44,6 +44,64 @@ body {
   }
 }
 
+/* Landing opening: copy rises line by line, then the preview cards are dealt in from the right. */
+@keyframes intro-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+@keyframes intro-deal {
+  from {
+    opacity: 0;
+    transform: translate(96px, 48px) rotate(12deg);
+  }
+}
+
+@keyframes intro-glow {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+
+.intro-rise {
+  animation: intro-rise 700ms cubic-bezier(0.19, 1, 0.22, 1) both;
+  animation-delay: calc(var(--intro-step, 0) * 70ms + 100ms);
+}
+
+.intro-deal {
+  animation: intro-deal 950ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--intro-step, 0) * 140ms + 350ms);
+}
+
+.intro-glow {
+  animation: intro-glow 1400ms cubic-bezier(0.22, 1, 0.36, 1) 300ms both;
+}
+
+/* A figure that changed under the person's hand settles into place instead of flickering. */
+@keyframes value-swap {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+    filter: blur(2px);
+  }
+}
+
+.value-swap {
+  animation: value-swap 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-rise,
+  .intro-deal,
+  .intro-glow,
+  .value-swap {
+    animation: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

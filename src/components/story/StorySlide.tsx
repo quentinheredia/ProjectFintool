@@ -49,9 +49,10 @@ function renderVisual<Kind extends CardKind>(card: CardOfKind<Kind>, result: Com
 interface StorySlideProps {
   slide: StorySlideContent;
   result: ComparisonResult;
+  action?: ReactNode;
 }
 
-export function StorySlide({ slide, result }: StorySlideProps) {
+export function StorySlide({ slide, result, action }: StorySlideProps) {
   const card = result.cards[slide.id - 1];
   const isPreliminary = result.meta.includesEstimates && (card.kind === "dollar_value" || card.kind === "summary");
   return (
@@ -59,6 +60,7 @@ export function StorySlide({ slide, result }: StorySlideProps) {
       slide={slide}
       visual={renderVisual(card, result)}
       footnote={isPreliminary ? `${result.meta.currentYear} figures are preliminary, year-to-date data.` : undefined}
+      action={action}
     />
   );
 }

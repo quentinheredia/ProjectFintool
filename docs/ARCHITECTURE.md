@@ -9,13 +9,22 @@ change reaches `master`.
 
 ---
 
-## One app, two routes
+## One app, six routes
 
 ```
 next start (Next 15, App Router)
- ├── /                 server component: landing, or the seven-card deck
- └── /api/og/card      Edge route handler: one card as a PNG
+ ├── /                         landing (opening animation, one CTA), or a shared deck
+ ├── /tour                     the seven-card deck on a sample input, ending at the sandbox
+ ├── /sandbox                  live comparison; every control recomputes in the browser
+ ├── /industries               one job then vs now, through the industries API
+ ├── /api/industries           GET: the occupation list and each one's data status
+ ├── /api/industries/compare   GET ?occupation=&then=: one occupation comparison as JSON
+ └── /api/og/card              Edge route handler: one card as a PNG
 ```
+
+The flow: `/` -> `See the comparison` -> `/tour` -> last card `Compare with
+your numbers` -> `/sandbox` -> `Play your story` (the deck at `/?...`) or
+`/industries`.
 
 No custom server, no WebSocket, no session. Everything a page needs is in its
 URL, so any instance can answer any request and a deploy is `next build` and
@@ -123,14 +132,25 @@ compareGenerations(input, table)
 
 ### Benchmark year
 
-`GENERATION_GAP_YEARS = 30`: the parent generation is born 30 years earlier.
+Every mode is anchored on the parent's birth year: `parentBirthYear` when it is
+given, otherwise `birthYear - DEFAULT_PARENT_AGE_GAP` (30).
 
-| Mode | Year | For birth year 1990 |
+| Mode | Year | For birth year 1990, parent unknown |
 |---|---|---|
-| `parent_peer` | `CURRENT_YEAR - 30` | 1996 - a parent at your age |
-| `age_25` | `birthYear - 30 + 25` | 1985 - your parents at 25 |
-| `age_30` | `birthYear - 30 + 30` | 1990 - your parents at 30 |
+| `parent_peer` | `parentBirthYear + (CURRENT_YEAR - birthYear)` | 1996 - your parent at your age |
+| `age_25` | `parentBirthYear + 25` | 1985 - your parent at 25 |
+| `age_30` | `parentBirthYear + 30` | 1990 - your parent at 30 |
 | `custom` | `customBenchmarkYear` | as given |
+
+### Work status
+
+| `employment` | Income used | Time |
+|---|---|---|
+| `working` (default) | `income` | counted from today |
+| `student` | `income`, the expected one | `workStartYear - CURRENT_YEAR` years are added to the time to the keys (card 2) |
+| `not_working` | full-time federal minimum wage, from the current year's data | counted from today |
+
+`meta.income` is always the income every card used.
 
 Every mode is clamped to 1965-2025 (the current year cannot benchmark against
 itself). `meta.clampedYear` is the year used when clamping happened, otherwise
@@ -171,21 +191,56 @@ GET /?by=1996&inc=65000&mode=parent_peer
  └── Home (server)
       ├── parseComparisonQuery(searchParams)
       │    ├── empty   -> <Landing/>
-      │    ├── invalid -> <Landing fieldErrors submitted/>    errors under each field
+      │    ├── invalid -> redirect /sandbox?<same query>       the sandbox cannot hold an invalid input
       │    └── valid   -> input
       ├── getMetricsTable()
       ├── compareGenerations(input, table)
       ├── buildStorySlides(result)                           the words for each card
       ├── after(logAnonymousQuery)
-      └── <StoryCarousel result slides/>                      client
+      └── <StoryCarousel result slides finale/>               client; finale opens the sandbox
 ```
 
 `generateMetadata` reads the same query and points `og:image` at card 7 in the
 social format, so a shared link unfurls as the summary. It needs
 `NEXT_PUBLIC_SITE_URL` to build an absolute URL.
 
-The landing form is a plain `method="get"` form whose action is `/`. It works
-before JavaScript has loaded, and submitting it is navigating to the share link.
+### `/sandbox`
+
+The server parses the same query keys and passes the initial input, every year
+of metrics and the wage presets to `Sandbox` (client). Each control change runs
+`compareGenerations` in the browser, so results update without a request, and
+`history.replaceState` keeps the address bar on `/sandbox?<share keys>`. Every
+control is a choice that cannot be invalid except the income text; while that is
+out of range, the results keep the last valid income (`src/lib/sandbox-draft.ts`).
+The income presets come from `wagePresets` in `src/lib/wage-presets.ts`.
+
+### `/industries` and `/api/industries/*`
+
+```
+GET /api/industries/compare?occupation=gov_it&then=1985
+ └── route handler
+      ├── occupationComparisonQuerySchema          zod, server only; then defaults to 1985
+      └── getOccupationComparison                  src/lib/industry/service.ts
+           ├── getMetricsTable()
+           ├── industrySourceFor(metrics)          the one place a data source is chosen
+           │    └── createLocalIndustrySource      bundled catalog, src/data/occupations.ts
+           └── compareOccupation(series, metrics)  src/lib/industry/occupation-comparison.ts
+```
+
+`IndustryDataSource` (`src/lib/industry/types.ts`) is the contract: list the
+occupations, return one occupation's annual wage by year. The local source
+serves a **placeholder** catalog: each occupation is a fixed multiple of the
+national average wage, so it trends exactly like the average, and every
+comparison says `Sample data`. Real series (BLS OEWS, CPS, OPM pay tables) go in
+as a new source with `status: "observed"`, stored locally first and later in
+Supabase, swapped in inside `industrySourceFor`. Nothing above it changes.
+
+`compareOccupation` prices the deck's purchases in that occupation's working
+time: hours for a used car, minutes for milk and eggs, years saving 15% for a
+starter-home deposit, hours for a quarter-acre lot. The formulas are the
+engine's own exports, so a person and an occupation are measured the same way.
+The `/industries` page renders the first comparison on the server and fetches
+the API on every change, keeping `?occupation=&then=` in the address bar.
 
 ### `/api/og/card`
 
@@ -219,7 +274,8 @@ interaction:
 | `StoryCarousel` | Embla, autoplay timer, keys, tap zones |
 | `ModeSwitcher` | router navigation in a transition |
 | `ShareModal` | `dialog`, clipboard, Web Share, image loading state |
-| `ComparatorForm` | live thousands separators, the custom-year field |
+| `Sandbox` | live comparison state, URL sync |
+| `IndustryExplorer` | fetches the industries API on each choice |
 | `LaborReceipt`, `DivergenceChart` | their toggles and the crosshair |
 
 The cards themselves (`CardShell`, the other visuals) are plain components that

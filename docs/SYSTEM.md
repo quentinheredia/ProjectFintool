@@ -28,7 +28,7 @@ one below wins and the other reads from it.
 | Every formula | `src/lib/comparator-engine.ts` | Pure. The only place a card's number is computed |
 | What input is valid | `src/lib/comparator-input.ts` | Zod. Kept out of the engine so zod never reaches the browser |
 | What an OG request may ask for | `src/lib/og-options-schema.ts` | Zod, server only, same reason |
-| URL keys (`by` `inc` `mode` `year`) | `src/lib/query-params.ts` | The share link and the OG link use the same keys |
+| URL keys (`by` `pb` `emp` `inc` `start` `mode` `year`) | `src/lib/query-params.ts` | The share link and the OG link use the same keys |
 | The share link | `buildSharePath` in the engine | The URL **is** the result. There is no other state to share |
 | The OG image link | `buildOgImagePath` in `src/lib/og-card-params.ts` | Share path + `card` + `fmt` |
 | Card words: eyebrow, hero, caption, mad-libs, source | `src/lib/story-content.ts` | Read by the web deck **and** the PNG. Copy is written once |
@@ -120,9 +120,12 @@ Things that are wrong here even when they are normal elsewhere.
 - **The story autoplays, 8 seconds a card, and stops for good** the first time
   a person navigates themselves. A pause control is always offered while it
   runs; holding a press pauses it too; reduced motion never starts it.
-- **No `whileInView`, no entrance animation on cards.** The only motion is the
-  carousel itself, the progress fill, colour transitions and the aura crossfade
-  behind the card.
+- **No `whileInView`, no entrance animation on cards.** Inside the deck the only
+  motion is the carousel itself, the progress fill, colour transitions and the
+  aura crossfade behind the card.
+- **The landing opens once.** Copy rises line by line and the preview cards are
+  dealt in, under a second, CSS only. The sandbox settles a changed figure in
+  240ms. Neither repeats on its own.
 - No animation library. Embla moves the slides; everything else is CSS.
 - `prefers-reduced-motion` removes autoplay and transitions; content never lives
   in motion.
@@ -186,9 +189,12 @@ Things that are wrong here even when they are normal elsewhere.
 
 | Component | File | Notes |
 |---|---|---|
-| `Home` | `src/app/page.tsx` | Server. Landing when the query is empty or invalid, the deck when it is valid. Also `generateMetadata` for link unfurls |
-| `Landing`, `PreviewStack` | `src/app/page.tsx` | The preview is two real cards rendered `inert`, not a picture of one |
-| `ComparatorForm` | `components/ComparatorForm.tsx` | A plain GET form. Works before JavaScript; the result URL is the share URL |
+| `Home` | `src/app/page.tsx` | Server. Landing when the query is empty, the deck when it is valid, a redirect to the sandbox when it is invalid. Also `generateMetadata` for link unfurls |
+| `Landing`, `PreviewStack` | `src/app/page.tsx` | Opening animation, one CTA to the tour. The preview is two real cards rendered `inert`, not a picture of one |
+| `Tour` | `src/app/tour/page.tsx` | The deck on `sampleComparisonInput`, labelled `Sample`, ending at the sandbox |
+| `SiteHeader` | `components/SiteHeader.tsx` | Wordmark and the `Sandbox` / `Industries` links |
+| `Sandbox`, `SandboxControls`, `SandboxResults` | `components/sandbox/` | Client. Live comparison; controls are selects and pills, so only the income text can be out of range |
+| `IndustryExplorer` | `components/industries/IndustryExplorer.tsx` | Client. Job and decade pickers; fetches `/api/industries/compare` |
 | `StoryCarousel` | `components/StoryCarousel.tsx` | Embla, progress segments, autoplay, tap zones, keys, aura behind the frame |
 | `ModeSwitcher` | `components/ModeSwitcher.tsx` | Native `select`; navigates to a new share path |
 | `ShareModal` | `components/ShareModal.tsx` | Native `dialog`. Preview, format toggle, share, copy image, download, copy link |
@@ -214,7 +220,12 @@ Things that are wrong here even when they are normal elsewhere.
 
 | Route | Purpose |
 |---|---|
-| `/` | Landing, or the seven-card deck when `by` and `inc` are present |
+| `/` | Landing, or the seven-card deck when the query is valid; an invalid query redirects to `/sandbox` |
+| `/tour` | The deck on a sample input (born 1996, median income), ending at the sandbox |
+| `/sandbox` | Live comparison on the same query keys; `Play your story` opens the deck |
+| `/industries` | One occupation then vs now; `?occupation=` `?then=` |
+| `/api/industries` | JSON list of occupations and their data status |
+| `/api/industries/compare` | JSON comparison for `occupation` (required) and `then` (1965 to last year, default 1985) |
 | `/api/og/card` | PNG of one card. `fmt=story` 1080x1920, `fmt=social` 1200x630. Edge, cached a year |
 
 ### Query keys
@@ -222,7 +233,10 @@ Things that are wrong here even when they are normal elsewhere.
 | Key | Means | Valid |
 |---|---|---|
 | `by` | birth year | 1945-2008 |
-| `inc` | annual gross income, USD | 1,000-10,000,000 |
+| `pb` | a parent's birth year | 15-60 years before `by`; absent means `by - 30` |
+| `emp` | `working` `student` `not_working` | default `working` |
+| `inc` | annual gross income, USD; expected income for a student | 1,000-10,000,000; required unless `emp=not_working`, which ignores it |
+| `start` | year a student starts working | this year to 15 years ahead; `student` only |
 | `mode` | `parent_peer` `age_25` `age_30` `custom` | default `parent_peer` |
 | `year` | benchmark year, `custom` only | any year; clamped to 1965-2025 and reported |
 | `card` | OG only | 1-7, default 7 |
@@ -236,6 +250,9 @@ Things that are wrong here even when they are normal elsewhere.
   link, a refresh and a link unfurl all rebuild the same story.
 - **The seed is the fallback, not the dev mode.** Postgres can be down, empty or
   half-seeded and the app still answers with real figures.
+- **Industry data has a contract, not a table yet.** `IndustryDataSource` is
+  what a Supabase-backed source implements; the page, the API and the formulas
+  do not change when it lands.
 - **One copy model, two renderers.** A new card is a formula in the engine, a
   body in `story-content.ts`, and one visual per renderer.
 - **The schema is applied, not just drafted.** `npm run db:push` creates it and

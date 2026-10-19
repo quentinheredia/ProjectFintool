@@ -8,7 +8,7 @@ export function toAnonymousQueryRow(input: ComparatorInput, meta: ComparisonResu
   return {
     birthYear: input.birthYear,
     benchmarkAge: meta.benchmarkAge,
-    userIncome: input.income.toFixed(2),
+    userIncome: meta.income.toFixed(2),
   };
 }
 

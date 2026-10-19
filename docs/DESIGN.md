@@ -21,7 +21,7 @@ Design read: a consumer story deck for people who will screenshot it, in a
 | `ink` | `#F5F5F2` | primary text. Never `#FFFFFF` |
 | `ink-muted` | `rgb(245 245 242 / .66)` | body copy, captions, eyebrows, footers |
 | `ink-faint` | `rgb(245 245 242 / .14)` | hairlines, empty year blocks, chart grid |
-| `brand` | `#FF3366` | landing CTA, selected mode pill, focus rings on the landing. Not inside the deck |
+| `brand` | `#FF3366` | page CTAs, selected pills, focus rings outside the deck. Not inside the deck |
 | `paper` / `paper-ink` | `#F2F1EC` / `#151515` | the receipt, and nothing else |
 | `chart-surface` | `#161616` | the divergence chart's panel. The chart palette is validated against it |
 | error | `#FF6B8A` | form error text and the invalid input border |
@@ -189,14 +189,40 @@ theirs.
 
 | Part | Value |
 |---|---|
-| layout | `lg`: `1.3fr / 0.7fr` grid, copy and form left, preview right. One column below `lg` |
+| layout | `SiteHeader`, then an `lg` `1.3fr / 0.7fr` grid: copy left, preview right. One column below `lg` |
 | wordmark | `Parity.` with the full stop in `brand`; `translate="no"` |
-| hero stack | headline, standfirst, form. Nothing else above the fold |
-| form | labels above inputs, `12px` radius, `ink/6%` fill, errors below in `#FF6B8A`, the first invalid field focused on load |
-| income | live thousands separators; a hidden `inc` input carries the digits |
-| mode | four pills, radio inputs inside labels; the selected one is filled `brand` |
-| CTA | one: `Compare`, a `brand` pill. The quick-try pills below it are links to finished stories, not a second ask |
-| preview | two real cards, card 1 behind at `5deg` and 60% opacity, card 2 in front at `-3deg`. Rendered `inert` and `aria-hidden` |
+| hero stack | headline, one standfirst sentence on what the site measures, one CTA. Nothing else |
+| CTA | `See the comparison`, a `brand` pill, to `/tour` |
+| preview | two real cards on the sample input, card 1 behind at `5deg`, 40% opacity and 1px blur, card 2 in front at `-3deg`, a soft `brand` glow behind. Rendered `inert` and `aria-hidden` |
+| opening | header, headline, standfirst and CTA rise 16px into place 70ms apart (700ms, expo out); the cards are dealt in from the right 140ms apart (950ms); the glow fades up. Once, CSS only, off under reduced motion |
+
+## The flow
+
+`/` -> `/tour` (the deck on a sample, labelled `Sample`, last card `Compare with
+your numbers`) -> `/sandbox` -> `Play your story` (the deck, last card `Open in
+the sandbox`) or `Compare industries instead`. The deck's closing CTA sits under
+the source line of card 7, filled with the card's accent.
+
+## The sandbox
+
+| Part | Value |
+|---|---|
+| layout | `lg`: `22rem / 1fr`, controls sticky on the left, results right. One column below `lg` |
+| controls | selects for birth years, start year and comparison; pills for status and income presets; one income field. Labels above, `12px` radius |
+| parent year | `Not sure` first; then 15 to 60 years before you. A birth-year change that rules out the parent's year resets it |
+| income | out of range shows the bounds in `#FF6B8A` and keeps the last valid income in the results |
+| results | a context line (you in 2026, your parent in the benchmark year, assumed or given), the summary tile, then six stat tiles. Each tile paints its own aura, so the grid shows the verdicts as colour |
+| change | a changed hero figure settles in 240ms (opacity, 4px, 2px blur); tile colours cross-fade 700ms |
+| actions | `Play your story` (`brand` pill, to the deck) and a text link to industries |
+
+## Industries
+
+| Part | Value |
+|---|---|
+| pickers | jobs as full-width radio rows (label, sector); decades as pills, each its middle year |
+| panel | `24px` radius, painted in the comparison's aura. Hero: buying power vs the same job then. Copy: wage then and now, price growth, real wage change |
+| measures | four rows of then/now bars without a track, the now bar in the accent; bars grow by `scaleX` |
+| honesty | `Sample data` badge and the source line on every placeholder comparison |
 
 ---
 
@@ -268,13 +294,17 @@ rewritten for Satori.
 | progress fill | `scaleX` 0 to 1, linear, 8s |
 | slide | Embla's own, on swipe, tap, key or autoplay |
 | share preview | opacity 300ms once loaded |
-| press | `scale .98` on CTAs, quick-try pills and share actions, `.95` on the desktop arrows |
+| press | `scale .98` on CTAs, preset pills and share actions, `.95` on the desktop arrows |
 | chart chips | opacity, on toggle |
+| landing opening | `intro-rise`, `intro-deal`, `intro-glow` in `globals.css`; once per load |
+| sandbox and industries figures | `value-swap` 240ms on change; tile and panel colour 700ms; industry bars `scaleX` 500ms |
 
 Rules:
 
-- **No entrance animations.** No card fades in, no number counts up. The
-  information is there at frame zero, which is also what a screenshot gets.
+- **No entrance animations inside the deck.** No card fades in, no number counts
+  up. The information is there at frame zero, which is also what a screenshot
+  gets. The landing's one-time opening is the exception, and it never touches a
+  card's content.
 - **No `whileInView`.**
 - Only `transform`, `opacity` and colour are animated.
 - `prefers-reduced-motion` sets every transition to effectively zero and stops

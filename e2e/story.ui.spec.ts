@@ -7,14 +7,35 @@ async function openStory(page: Page, query: string) {
   await page.locator("[data-carousel-ready]").waitFor();
 }
 
-test("landing form submits to a shareable story deck", async ({ page }) => {
+test("the landing leads through the sample tour to the sandbox", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("Birth year").fill("1996");
-  await page.getByLabel("Annual income").fill("65000");
-  await expect(page.getByLabel("Annual income")).toHaveValue("65,000");
-  await page.getByRole("button", { name: "Compare" }).click();
-  await expect(page).toHaveURL(/by=1996&inc=65000&mode=parent_peer/);
+  await page.getByRole("link", { name: "See the comparison" }).click();
+  await expect(page).toHaveURL(/\/tour$/);
+  await page.locator("[data-carousel-ready]").waitFor();
+  for (let card = 2; card <= 7; card++) {
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByText(`Card ${card} of 7`, { exact: false })).toBeAttached();
+  }
+  await page.getByRole("link", { name: "Compare with your numbers" }).click();
+  await expect(page).toHaveURL(/\/sandbox/);
+});
+
+test("the sandbox updates live and plays as a story", async ({ page }) => {
+  await page.goto("/sandbox");
+  await page.getByLabel("Your birth year").selectOption("2005");
+  await page.getByText("Student", { exact: true }).click();
+  await page.getByRole("button", { name: /^Top 1%/ }).click();
+  await expect(page).toHaveURL(/by=2005&inc=794129&mode=parent_peer&emp=student&start=\d{4}/);
+  await expect(page.getByText("against your parent in", { exact: false })).toContainText("born 1975, assumed");
+  await page.getByRole("link", { name: "Play your story" }).click();
+  await expect(page).toHaveURL(/\/\?by=2005&inc=794129/);
   await expect(page.getByText("Card 1 of 7", { exact: false })).toBeAttached();
+});
+
+test("an invalid share link opens the sandbox", async ({ page }) => {
+  await page.goto("/?by=1800&inc=5");
+  await expect(page).toHaveURL(/\/sandbox/);
+  await expect(page.getByRole("heading", { name: "Your comparison, live" })).toBeVisible();
 });
 
 test("keyboard arrows move between cards", async ({ page }) => {

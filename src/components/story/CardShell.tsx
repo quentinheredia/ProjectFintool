@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { AURA_THEMES } from "@/lib/aura";
 import type { StorySlideContent } from "@/lib/story-content";
+import { MadLibsCopy } from "./MadLibsCopy";
 
 export function auraStyle(aura: StorySlideContent["aura"]): CSSProperties {
   const theme = AURA_THEMES[aura];
@@ -15,10 +16,12 @@ interface CardShellProps {
   slide: StorySlideContent;
   visual: ReactNode;
   footnote?: string;
+  /** Rendered last, under the source line; the deck puts its closing call to action here. */
+  action?: ReactNode;
 }
 
 /** The 4-layer card anatomy: eyebrow, hero stat, mad-libs copy, then micro-visual and source footer. */
-export function CardShell({ slide, visual, footnote }: CardShellProps) {
+export function CardShell({ slide, visual, footnote, action }: CardShellProps) {
   return (
     <article
       style={auraStyle(slide.aura)}
@@ -34,18 +37,7 @@ export function CardShell({ slide, visual, footnote }: CardShellProps) {
       </div>
 
       <p className="mt-5 max-w-[34ch] text-lg leading-snug text-ink-muted">
-        {slide.copy.map((segment, index) =>
-          segment.emphasis ? (
-            <span
-              key={index}
-              className="bg-[linear-gradient(transparent_62%,color-mix(in_srgb,var(--aura-accent)_38%,transparent)_62%)] font-semibold text-ink"
-            >
-              {segment.text}
-            </span>
-          ) : (
-            <span key={index}>{segment.text}</span>
-          ),
-        )}
+        <MadLibsCopy copy={slide.copy} />
       </p>
 
       <div className="flex flex-1 flex-col justify-center pt-6">{visual}</div>
@@ -54,6 +46,7 @@ export function CardShell({ slide, visual, footnote }: CardShellProps) {
         <p>{slide.source}</p>
         {footnote && <p className="mt-1 normal-case tracking-normal">{footnote}</p>}
       </footer>
+      {action && <div className="mt-5">{action}</div>}
     </article>
   );
 }
