@@ -1,103 +1,94 @@
-import Image from "next/image";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { ComparatorForm } from "@/components/ComparatorForm";
+import { StoryCarousel } from "@/components/StoryCarousel";
+import { StorySlide } from "@/components/story/StorySlide";
+import { SEED_METRICS_TABLE } from "@/data/seed-metrics-table";
+import { getMetricsTable } from "@/db";
+import { buildSharePath, compareGenerations, type ComparatorInput } from "@/lib/comparator-engine";
+import { parseComparisonQuery, type ComparisonQuery, type SearchParams } from "@/lib/query-params";
+import { buildOgImagePath } from "@/lib/og-card-params";
+import { buildStorySlides } from "@/lib/story-content";
 
-export default function Home() {
+const QUICK_TRIES: { label: string; input: ComparatorInput }[] = [
+  { label: "Born 1996, $65K", input: { birthYear: 1996, income: 65_000, comparisonMode: "parent_peer" } },
+  { label: "Born 1990, $450K", input: { birthYear: 1990, income: 450_000, comparisonMode: "parent_peer" } },
+  { label: "Born 2003, minimum wage", input: { birthYear: 2003, income: 15_080, comparisonMode: "parent_peer" } },
+];
+
+const PREVIEW_INPUT = QUICK_TRIES[0].input;
+
+function PreviewStack() {
+  const result = compareGenerations(PREVIEW_INPUT, SEED_METRICS_TABLE);
+  const [dollarSlide, housingSlide] = buildStorySlides(result);
+  const frame = "absolute h-[600px] w-[338px] overflow-hidden rounded-3xl ring-1 ring-ink-faint";
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+    <div aria-hidden inert className="relative hidden h-[640px] w-[380px] justify-self-end lg:block">
+      <div className={`${frame} top-0 right-0 rotate-[5deg] opacity-60`}>
+        <StorySlide slide={dollarSlide} result={result} />
+      </div>
+      <div className={`${frame} top-6 right-10 -rotate-[3deg] shadow-[0_40px_100px_-30px_rgba(0,0,0,0.95)]`}>
+        <StorySlide slide={housingSlide} result={result} />
+      </div>
     </div>
   );
+}
+
+function Landing({ query }: { query: Exclude<ComparisonQuery, { status: "valid" }> }) {
+  const invalid = query.status === "invalid" ? query : undefined;
+  return (
+    <main className="min-h-[100dvh] overflow-hidden bg-page">
+      <div className="mx-auto grid min-h-[100dvh] max-w-6xl items-center gap-12 px-4 py-10 md:px-8 lg:grid-cols-[1.3fr_0.7fr]">
+        <div>
+          <p translate="no" className="text-lg font-semibold tracking-tight">
+            Parity<span className="text-brand">.</span>
+          </p>
+          <h1 className="mt-10 max-w-[22ch] text-4xl leading-[1.04] text-balance font-semibold tracking-tighter md:text-5xl">
+            How hard do you work for the life your parents had?
+          </h1>
+          <p className="mt-5 max-w-[46ch] text-lg leading-relaxed text-ink-muted">
+            Two inputs, seven cards. Your paycheck against a peer from 30 years ago, measured in hours worked.
+          </p>
+
+          <ComparatorForm fieldErrors={invalid?.fieldErrors} submitted={invalid?.submitted} />
+
+          <div className="mt-8 flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-sm text-ink-muted">Or try</span>
+            {QUICK_TRIES.map((quickTry) => (
+              <Link
+                key={quickTry.label}
+                href={buildSharePath(quickTry.input)}
+                className="rounded-full bg-ink/[0.07] px-3.5 py-1.5 text-sm text-ink transition hover:bg-ink/15 focus-visible:outline-2 focus-visible:outline-brand active:scale-[0.98]"
+              >
+                {quickTry.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <PreviewStack />
+      </div>
+    </main>
+  );
+}
+
+/** Shared result links unfurl as the summary card on X, iMessage, Slack and others. */
+export async function generateMetadata({ searchParams }: { searchParams: Promise<SearchParams> }): Promise<Metadata> {
+  const query = parseComparisonQuery(await searchParams);
+  if (query.status !== "valid") return {};
+  const image = { url: buildOgImagePath(query.input, { card: 7, fmt: "social" }), width: 1200, height: 630 };
+  const title = `Born ${query.input.birthYear}: my buying power vs my parents'`;
+  return {
+    title,
+    openGraph: { title, images: [image] },
+    twitter: { card: "summary_large_image", title, images: [image] },
+  };
+}
+
+export default async function Home({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const query = parseComparisonQuery(await searchParams);
+  if (query.status !== "valid") return <Landing query={query} />;
+
+  const result = compareGenerations(query.input, await getMetricsTable());
+  return <StoryCarousel key={buildSharePath(query.input)} result={result} slides={buildStorySlides(result)} />;
 }
