@@ -8,12 +8,12 @@ import {
   MissingMetricsYearError,
   buildSharePath,
   compareGenerations,
-  comparatorInputSchema,
   resolveBenchmark,
   verdictFor,
   type ComparatorInput,
   type ComparisonMode,
 } from "../comparator-engine";
+import { comparatorInputSchema } from "../comparator-input";
 
 const BENCHMARK_ROW: Omit<YearlyMetrics, "year"> = {
   medianIncome: 20_000,

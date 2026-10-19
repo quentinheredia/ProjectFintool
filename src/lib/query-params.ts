@@ -1,4 +1,5 @@
-import { comparatorInputSchema, type ComparatorInput } from "./comparator-engine";
+import type { ComparatorInput } from "./comparator-engine";
+import { comparatorInputSchema } from "./comparator-input";
 
 export type SearchParams = Record<string, string | string[] | undefined>;
 

@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { FIRST_DATA_YEAR, type MetricsTable, type YearlyMetrics } from "@/data/yearly-metrics";
 
 export const CURRENT_YEAR = 2026;
@@ -20,31 +19,13 @@ const PARITY_BURDEN_RATIO = 1;
 export const COMPARISON_MODES = ["parent_peer", "age_25", "age_30", "custom"] as const;
 export type ComparisonMode = (typeof COMPARISON_MODES)[number];
 
-export const comparatorInputSchema = z
-  .object({
-    birthYear: z.coerce
-      .number({ error: "Enter your birth year" })
-      .int("Enter a whole year, like 1996")
-      .min(1945, "Birth year must be 1945 or later")
-      .max(2008, "Birth year must be 2008 or earlier"),
-    income: z.coerce
-      .number({ error: "Enter your annual income" })
-      .min(1_000, "Income must be at least $1,000")
-      .max(10_000_000, "Income must be $10,000,000 or less"),
-    comparisonMode: z.enum(COMPARISON_MODES, { error: "Pick a comparison" }).default("parent_peer"),
-    customBenchmarkYear: z.coerce
-      .number({ error: "Enter a year" })
-      .int("Enter a whole year")
-      .min(1900, "Pick a year after 1900")
-      .max(2100, "Pick a year before 2100")
-      .optional(),
-  })
-  .refine((input) => input.comparisonMode !== "custom" || input.customBenchmarkYear !== undefined, {
-    message: "Pick a year to compare against",
-    path: ["customBenchmarkYear"],
-  });
-
-export type ComparatorInput = z.output<typeof comparatorInputSchema>;
+/** A validated comparison request; parse untrusted input with `comparatorInputSchema` first. */
+export interface ComparatorInput {
+  birthYear: number;
+  income: number;
+  comparisonMode: ComparisonMode;
+  customBenchmarkYear?: number;
+}
 
 export type Aura = "crimson" | "amber" | "emerald";
 export type Direction = "harder" | "easier";
@@ -468,7 +449,7 @@ function buildDivergenceChart(table: MetricsTable, base: YearlyMetrics): Diverge
   return points;
 }
 
-/** Computes the full 7-card story and chart payload. `input` must already be parsed by `comparatorInputSchema`. */
+/** Computes the full 7-card story and chart payload. `input` must already be parsed by `comparatorInputSchema` (see comparator-input.ts). */
 export function compareGenerations(input: ComparatorInput, table: MetricsTable): ComparisonResult {
   const benchmark = resolveBenchmark(input);
   const context: ComparisonContext = {

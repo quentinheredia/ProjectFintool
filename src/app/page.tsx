@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { after } from "next/server";
 import { ComparatorForm } from "@/components/ComparatorForm";
 import { StoryCarousel } from "@/components/StoryCarousel";
 import { StorySlide } from "@/components/story/StorySlide";
 import { SEED_METRICS_TABLE } from "@/data/seed-metrics-table";
 import { getMetricsTable } from "@/db";
+import { logAnonymousQuery, toAnonymousQueryRow } from "@/db/anonymous-queries";
 import { buildSharePath, compareGenerations, type ComparatorInput } from "@/lib/comparator-engine";
 import { parseComparisonQuery, type ComparisonQuery, type SearchParams } from "@/lib/query-params";
 import { buildOgImagePath } from "@/lib/og-card-params";
@@ -90,5 +92,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
   if (query.status !== "valid") return <Landing query={query} />;
 
   const result = compareGenerations(query.input, await getMetricsTable());
+  const queryRow = toAnonymousQueryRow(query.input, result.meta);
+  after(() => logAnonymousQuery(queryRow));
   return <StoryCarousel key={buildSharePath(query.input)} result={result} slides={buildStorySlides(result)} />;
 }

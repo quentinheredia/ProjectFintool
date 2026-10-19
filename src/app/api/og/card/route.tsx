@@ -1,7 +1,8 @@
 import { ImageResponse } from "@vercel/og";
 import { SEED_METRICS_TABLE } from "@/data/seed-metrics-table";
 import { compareGenerations } from "@/lib/comparator-engine";
-import { OG_FORMATS, ogOptionsSchema } from "@/lib/og-card-params";
+import { OG_FORMATS } from "@/lib/og-card-params";
+import { ogOptionsSchema } from "@/lib/og-options-schema";
 import { parseComparisonQuery } from "@/lib/query-params";
 import { buildStorySlides } from "@/lib/story-content";
 import { OgCard } from "./og-card";

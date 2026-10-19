@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { SEED_METRICS_TABLE } from "@/data/seed-metrics-table";
 import { compareGenerations, inputFromMeta, type ComparatorInput } from "../comparator-engine";
-import { buildOgImagePath, ogOptionsSchema } from "../og-card-params";
+import { buildOgImagePath } from "../og-card-params";
+import { ogOptionsSchema } from "../og-options-schema";
 
 const customInput: ComparatorInput = {
   birthYear: 1990,
