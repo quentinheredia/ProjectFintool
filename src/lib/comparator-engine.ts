@@ -1,11 +1,11 @@
-import { z } from "zod";
 import { FIRST_DATA_YEAR, type MetricsTable, type YearlyMetrics } from "@/data/yearly-metrics";
 
 export const CURRENT_YEAR = 2026;
 const LATEST_BENCHMARK_YEAR = CURRENT_YEAR - 1;
-const GENERATION_GAP_YEARS = 30;
+/** A parent's assumed age at the user's birth when the parent's birth year is not given. */
+export const DEFAULT_PARENT_AGE_GAP = 30;
 
-const FULL_TIME_HOURS_PER_YEAR = 2080;
+export const FULL_TIME_HOURS_PER_YEAR = 2080;
 const MINUTES_PER_HOUR = 60;
 const STARTER_HOME_SHARE_OF_MEDIAN = 0.8;
 const DOWN_PAYMENT_RATE = 0.2;
@@ -20,31 +20,23 @@ const PARITY_BURDEN_RATIO = 1;
 export const COMPARISON_MODES = ["parent_peer", "age_25", "age_30", "custom"] as const;
 export type ComparisonMode = (typeof COMPARISON_MODES)[number];
 
-export const comparatorInputSchema = z
-  .object({
-    birthYear: z.coerce
-      .number({ error: "Enter your birth year" })
-      .int("Enter a whole year, like 1996")
-      .min(1945, "Birth year must be 1945 or later")
-      .max(2008, "Birth year must be 2008 or earlier"),
-    income: z.coerce
-      .number({ error: "Enter your annual income" })
-      .min(1_000, "Income must be at least $1,000")
-      .max(10_000_000, "Income must be $10,000,000 or less"),
-    comparisonMode: z.enum(COMPARISON_MODES, { error: "Pick a comparison" }).default("parent_peer"),
-    customBenchmarkYear: z.coerce
-      .number({ error: "Enter a year" })
-      .int("Enter a whole year")
-      .min(1900, "Pick a year after 1900")
-      .max(2100, "Pick a year before 2100")
-      .optional(),
-  })
-  .refine((input) => input.comparisonMode !== "custom" || input.customBenchmarkYear !== undefined, {
-    message: "Pick a year to compare against",
-    path: ["customBenchmarkYear"],
-  });
+export const EMPLOYMENT_STATUSES = ["working", "student", "not_working"] as const;
+export type EmploymentStatus = (typeof EMPLOYMENT_STATUSES)[number];
 
-export type ComparatorInput = z.output<typeof comparatorInputSchema>;
+/** A validated comparison request; parse untrusted input with `comparatorInputSchema` first. */
+export interface ComparatorInput {
+  birthYear: number;
+  /** Unknown parents are assumed born DEFAULT_PARENT_AGE_GAP years before the user. */
+  parentBirthYear?: number;
+  /** Defaults to "working". */
+  employment?: EmploymentStatus;
+  /** Annual income, or the expected one for a student. Not working always uses full-time minimum wage. */
+  income?: number;
+  /** Students only: the year they expect to start working. */
+  workStartYear?: number;
+  comparisonMode: ComparisonMode;
+  customBenchmarkYear?: number;
+}
 
 export type Aura = "crimson" | "amber" | "emerald";
 export type Direction = "harder" | "easier";
@@ -62,7 +54,9 @@ export interface BenchmarkResolution {
   /** The year actually used when the requested year fell outside the dataset, otherwise null. */
   clampedYear: number | null;
   userAge: number;
-  /** Age of a parent-generation peer (born GENERATION_GAP_YEARS earlier) in the benchmark year. */
+  /** The parent's birth year as given, or assumed from DEFAULT_PARENT_AGE_GAP. */
+  parentBirthYear: number;
+  /** The parent's age in the benchmark year. */
   benchmarkAge: number;
 }
 
@@ -83,7 +77,9 @@ export interface HousingCard {
   id: 2;
   kind: "housing";
   yearsToSaveThen: number;
+  /** Counted from today, so it includes `yearsUntilWorking`. */
   yearsToSaveNow: number;
+  yearsUntilWorking: number;
   extraYearsRequired: number;
   housingParitySalary: number;
   priceToIncomeThen: number;
@@ -185,6 +181,12 @@ export interface ComparisonResult {
     currentYear: number;
     comparisonMode: ComparisonMode;
     birthYear: number;
+    /** As given; `parentBirthYear` on the resolution is the one used. */
+    givenParentBirthYear?: number;
+    employment: EmploymentStatus;
+    workStartYear?: number;
+    yearsUntilWorking: number;
+    /** The annual income every card uses, after the not-working fallback. */
     income: number;
     userHourlyWage: number;
     includesEstimates: boolean;
@@ -201,8 +203,9 @@ type NumericMetricField = {
 }[keyof YearlyMetrics];
 
 interface ComparisonContext {
-  input: ComparatorInput;
+  income: number;
   userHourlyWage: number;
+  yearsUntilWorking: number;
   then: YearlyMetrics;
   now: YearlyMetrics;
 }
@@ -214,29 +217,48 @@ export class MissingMetricsYearError extends Error {
   }
 }
 
+const parentBirthYearOf = (input: ComparatorInput) => input.parentBirthYear ?? input.birthYear - DEFAULT_PARENT_AGE_GAP;
+/** The year the parent was the age the user is today. */
+const parentAtUserAge = (input: ComparatorInput) => parentBirthYearOf(input) + CURRENT_YEAR - input.birthYear;
+
 const BENCHMARK_YEAR_BY_MODE: Record<ComparisonMode, (input: ComparatorInput) => number> = {
-  parent_peer: () => CURRENT_YEAR - GENERATION_GAP_YEARS,
-  age_25: ({ birthYear }) => birthYear - GENERATION_GAP_YEARS + 25,
-  age_30: ({ birthYear }) => birthYear - GENERATION_GAP_YEARS + 30,
-  custom: ({ customBenchmarkYear }) => customBenchmarkYear ?? CURRENT_YEAR - GENERATION_GAP_YEARS,
+  parent_peer: parentAtUserAge,
+  age_25: (input) => parentBirthYearOf(input) + 25,
+  age_30: (input) => parentBirthYearOf(input) + 30,
+  custom: (input) => input.customBenchmarkYear ?? parentAtUserAge(input),
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 const toPercent = (fraction: number) => fraction * 100;
 const growthPct = (from: number, to: number) => toPercent((to - from) / from);
-const geometricMean = (values: number[]) => values.reduce((product, value) => product * value, 1) ** (1 / values.length);
+export const geometricMean = (values: number[]) => values.reduce((product, value) => product * value, 1) ** (1 / values.length);
 
 export function resolveBenchmark(input: ComparatorInput): BenchmarkResolution {
   const requestedBenchmarkYear = BENCHMARK_YEAR_BY_MODE[input.comparisonMode](input);
   const benchmarkYear = clamp(requestedBenchmarkYear, FIRST_DATA_YEAR, LATEST_BENCHMARK_YEAR);
-  const parentGenerationBirthYear = input.birthYear - GENERATION_GAP_YEARS;
+  const parentBirthYear = parentBirthYearOf(input);
   return {
     benchmarkYear,
     requestedBenchmarkYear,
     clampedYear: benchmarkYear === requestedBenchmarkYear ? null : benchmarkYear,
     userAge: CURRENT_YEAR - input.birthYear,
-    benchmarkAge: benchmarkYear - parentGenerationBirthYear,
+    parentBirthYear,
+    benchmarkAge: benchmarkYear - parentBirthYear,
   };
+}
+
+export const minimumWageAnnualIncome = (metrics: YearlyMetrics) => metrics.federalMinWage * FULL_TIME_HOURS_PER_YEAR;
+
+/** Not working counts as full-time minimum wage; everyone else brings their own (or expected) income. */
+function resolveAnnualIncome(input: ComparatorInput, now: YearlyMetrics): number {
+  if (input.employment === "not_working" || input.income === undefined) return minimumWageAnnualIncome(now);
+  return input.income;
+}
+
+/** Counting starts today, so a student who starts working later waits that long before saving. */
+function yearsUntilWorking({ employment, workStartYear }: ComparatorInput): number {
+  if (employment !== "student" || workStartYear === undefined) return 0;
+  return Math.max(workStartYear - CURRENT_YEAR, 0);
 }
 
 export function verdictFor(burdenRatio: number): Verdict {
@@ -247,55 +269,58 @@ export function verdictFor(burdenRatio: number): Verdict {
   return { burdenRatio, direction: isHarder ? "harder" : "easier", aura };
 }
 
-function metricsFor(table: MetricsTable, year: number): YearlyMetrics {
+export function metricsFor(table: MetricsTable, year: number): YearlyMetrics {
   const metrics = table.get(year);
   if (!metrics) throw new MissingMetricsYearError(year);
   return metrics;
 }
 
-function buildDollarValueCard({ input, then, now }: ComparisonContext): DollarValueCard {
+function buildDollarValueCard({ income, then, now }: ComparisonContext): DollarValueCard {
   const priceLevelRatio = then.cpiIndex / now.cpiIndex;
-  const realPurchasingPowerRatio = input.income / now.cpiIndex / (then.medianIncome / then.cpiIndex);
+  const realPurchasingPowerRatio = income / now.cpiIndex / (then.medianIncome / then.cpiIndex);
   const cpiParitySalary = then.medianIncome / priceLevelRatio;
   return {
     id: 1,
     kind: "dollar_value",
     dollarValueLossPct: toPercent(1 - priceLevelRatio),
-    equivalentPastSalary: input.income * priceLevelRatio,
+    equivalentPastSalary: income * priceLevelRatio,
     realPurchasingPowerRatio,
     cpiParitySalary,
-    cpiParityGap: input.income - cpiParitySalary,
+    cpiParityGap: income - cpiParitySalary,
     benchmarkMedianIncome: then.medianIncome,
     verdict: verdictFor(1 / realPurchasingPowerRatio),
   };
 }
 
-function yearsToSaveStarterDownPayment(medianHomePrice: number, annualIncome: number): number {
+export function yearsToSaveStarterDownPayment(medianHomePrice: number, annualIncome: number): number {
   const downPayment = DOWN_PAYMENT_RATE * STARTER_HOME_SHARE_OF_MEDIAN * medianHomePrice;
   return downPayment / (ANNUAL_SAVINGS_RATE * annualIncome);
 }
 
-function buildHousingCard({ input, then, now }: ComparisonContext): HousingCard {
+function buildHousingCard({ income, yearsUntilWorking, then, now }: ComparisonContext): HousingCard {
   const yearsToSaveThen = yearsToSaveStarterDownPayment(then.medianHomePrice, then.medianIncome);
-  const yearsToSaveNow = yearsToSaveStarterDownPayment(now.medianHomePrice, input.income);
+  const yearsToSaveNow = yearsUntilWorking + yearsToSaveStarterDownPayment(now.medianHomePrice, income);
   return {
     id: 2,
     kind: "housing",
     yearsToSaveThen,
     yearsToSaveNow,
+    yearsUntilWorking,
     extraYearsRequired: yearsToSaveNow - yearsToSaveThen,
     housingParitySalary: now.medianHomePrice * (then.medianIncome / then.medianHomePrice),
     priceToIncomeThen: then.medianHomePrice / then.medianIncome,
-    priceToIncomeNow: now.medianHomePrice / input.income,
+    priceToIncomeNow: now.medianHomePrice / income,
     verdict: verdictFor(yearsToSaveNow / yearsToSaveThen),
   };
 }
 
-const laborMinutes = (price: number, hourlyWage: number) => (price / hourlyWage) * MINUTES_PER_HOUR;
+export const laborMinutes = (price: number, hourlyWage: number) => (price / hourlyWage) * MINUTES_PER_HOUR;
+export const groceryBasketPrice = (metrics: YearlyMetrics) => metrics.milkGallonPrice + metrics.eggsDozenPrice;
+export const quarterAcreLotCost = (metrics: YearlyMetrics) => LOT_SIZE_ACRES * metrics.medianLandAcrePrice;
 
 function buildGroceryCard({ userHourlyWage, then, now }: ComparisonContext): GroceryCard {
-  const basketThen = then.milkGallonPrice + then.eggsDozenPrice;
-  const basketNow = now.milkGallonPrice + now.eggsDozenPrice;
+  const basketThen = groceryBasketPrice(then);
+  const basketNow = groceryBasketPrice(now);
   const minutesWorkedThen = laborMinutes(basketThen, then.avgHourlyWage);
   const minutesWorkedNowUser = laborMinutes(basketNow, userHourlyWage);
   return {
@@ -312,8 +337,8 @@ function buildGroceryCard({ userHourlyWage, then, now }: ComparisonContext): Gro
 }
 
 function buildLandCard({ userHourlyWage, then, now }: ComparisonContext): LandCard {
-  const lotCostThen = LOT_SIZE_ACRES * then.medianLandAcrePrice;
-  const lotCostNow = LOT_SIZE_ACRES * now.medianLandAcrePrice;
+  const lotCostThen = quarterAcreLotCost(then);
+  const lotCostNow = quarterAcreLotCost(now);
   const hoursThen = lotCostThen / (then.medianIncome / FULL_TIME_HOURS_PER_YEAR);
   const hoursNowUser = lotCostNow / userHourlyWage;
   return {
@@ -359,24 +384,38 @@ function buildRetirementCard({ then, now }: ComparisonContext): RetirementCard {
 
 /** Recovers the original request from a result, e.g. to build share links on the client. */
 export function inputFromMeta(meta: ComparisonResult["meta"]): ComparatorInput {
-  const input: ComparatorInput = {
-    birthYear: meta.birthYear,
-    income: meta.income,
-    comparisonMode: meta.comparisonMode,
-  };
-  return meta.comparisonMode === "custom" ? { ...input, customBenchmarkYear: meta.requestedBenchmarkYear } : input;
+  const input: ComparatorInput = { birthYear: meta.birthYear, comparisonMode: meta.comparisonMode };
+  if (meta.givenParentBirthYear !== undefined) input.parentBirthYear = meta.givenParentBirthYear;
+  if (meta.employment !== "working") input.employment = meta.employment;
+  if (meta.employment !== "not_working") input.income = meta.income;
+  if (meta.workStartYear !== undefined) input.workStartYear = meta.workStartYear;
+  if (meta.comparisonMode === "custom") input.customBenchmarkYear = meta.requestedBenchmarkYear;
+  return input;
 }
 
+/** Defaults stay out of the URL, so the common link is still `/?by=1996&inc=65000&mode=parent_peer`. */
 export function buildSharePath(input: ComparatorInput): string {
-  const params = new URLSearchParams({
-    by: String(input.birthYear),
-    inc: String(input.income),
-    mode: input.comparisonMode,
-  });
+  return `/?${comparisonQueryString(input)}`;
+}
+
+/** The sandbox opened on the same comparison as a story. */
+export function buildSandboxPath(input: ComparatorInput): string {
+  return `/sandbox?${comparisonQueryString(input)}`;
+}
+
+function comparisonQueryString(input: ComparatorInput): string {
+  const params = new URLSearchParams({ by: String(input.birthYear) });
+  if (input.employment !== "not_working" && input.income !== undefined) params.set("inc", String(input.income));
+  params.set("mode", input.comparisonMode);
   if (input.comparisonMode === "custom" && input.customBenchmarkYear !== undefined) {
     params.set("year", String(input.customBenchmarkYear));
   }
-  return `/?${params}`;
+  if (input.parentBirthYear !== undefined) params.set("pb", String(input.parentBirthYear));
+  if (input.employment && input.employment !== "working") params.set("emp", input.employment);
+  if (input.employment === "student" && input.workStartYear !== undefined) {
+    params.set("start", String(input.workStartYear));
+  }
+  return params.toString();
 }
 
 function buildSummaryCard(
@@ -468,14 +507,17 @@ function buildDivergenceChart(table: MetricsTable, base: YearlyMetrics): Diverge
   return points;
 }
 
-/** Computes the full 7-card story and chart payload. `input` must already be parsed by `comparatorInputSchema`. */
+/** Computes the full 7-card story and chart payload. `input` must already be parsed by `comparatorInputSchema` (see comparator-input.ts). */
 export function compareGenerations(input: ComparatorInput, table: MetricsTable): ComparisonResult {
   const benchmark = resolveBenchmark(input);
+  const now = metricsFor(table, CURRENT_YEAR);
+  const income = resolveAnnualIncome(input, now);
   const context: ComparisonContext = {
-    input,
-    userHourlyWage: input.income / FULL_TIME_HOURS_PER_YEAR,
+    income,
+    userHourlyWage: income / FULL_TIME_HOURS_PER_YEAR,
+    yearsUntilWorking: yearsUntilWorking(input),
     then: metricsFor(table, benchmark.benchmarkYear),
-    now: metricsFor(table, CURRENT_YEAR),
+    now,
   };
   const detailCards: DetailCards = [
     buildDollarValueCard(context),
@@ -492,7 +534,11 @@ export function compareGenerations(input: ComparatorInput, table: MetricsTable):
       currentYear: CURRENT_YEAR,
       comparisonMode: input.comparisonMode,
       birthYear: input.birthYear,
-      income: input.income,
+      givenParentBirthYear: input.parentBirthYear,
+      employment: input.employment ?? "working",
+      workStartYear: input.employment === "student" ? input.workStartYear : undefined,
+      yearsUntilWorking: context.yearsUntilWorking,
+      income,
       userHourlyWage: context.userHourlyWage,
       includesEstimates: context.then.isEstimate || context.now.isEstimate,
     },

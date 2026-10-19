@@ -8,12 +8,12 @@ import {
   MissingMetricsYearError,
   buildSharePath,
   compareGenerations,
-  comparatorInputSchema,
   resolveBenchmark,
   verdictFor,
   type ComparatorInput,
   type ComparisonMode,
 } from "../comparator-engine";
+import { comparatorInputSchema } from "../comparator-input";
 
 const BENCHMARK_ROW: Omit<YearlyMetrics, "year"> = {
   medianIncome: 20_000,
@@ -76,9 +76,21 @@ describe("comparatorInputSchema", () => {
   it("coerces query-string values and defaults the comparison mode", () => {
     expect(comparatorInputSchema.parse({ birthYear: "1996", income: "65000" })).toEqual({
       birthYear: 1996,
+      employment: "working",
       income: 65_000,
       comparisonMode: "parent_peer",
     });
+  });
+
+  it("uses no income when not working, even if one is sent", () => {
+    const parsed = comparatorInputSchema.parse({ birthYear: "1996", employment: "not_working", income: "65000" });
+    expect(parsed).not.toHaveProperty("income");
+  });
+
+  it("keeps the start year only for students", () => {
+    const raw = { birthYear: "2005", income: "50000", workStartYear: String(CURRENT_YEAR + 2) };
+    expect(comparatorInputSchema.parse({ ...raw, employment: "student" }).workStartYear).toBe(CURRENT_YEAR + 2);
+    expect(comparatorInputSchema.parse(raw)).not.toHaveProperty("workStartYear");
   });
 
   it.each([
@@ -90,6 +102,12 @@ describe("comparatorInputSchema", () => {
     ["non-numeric income", { birthYear: 1996, income: "lots" }],
     ["unknown comparison mode", { birthYear: 1996, income: 65_000, comparisonMode: "age_40" }],
     ["custom mode without a year", { birthYear: 1996, income: 65_000, comparisonMode: "custom" }],
+    ["working without an income", { birthYear: 1996 }],
+    ["student without an expected income", { birthYear: 2005, employment: "student", workStartYear: CURRENT_YEAR + 1 }],
+    ["student without a start year", { birthYear: 2005, employment: "student", income: 50_000 }],
+    ["student starting in the past", { birthYear: 2005, employment: "student", income: 50_000, workStartYear: CURRENT_YEAR - 1 }],
+    ["parent born 14 years before", { birthYear: 1996, income: 65_000, parentBirthYear: 1982 }],
+    ["parent born 61 years before", { birthYear: 1996, income: 65_000, parentBirthYear: 1935 }],
   ])("rejects %s", (_, raw) => {
     expect(comparatorInputSchema.safeParse(raw).success).toBe(false);
   });
@@ -97,6 +115,9 @@ describe("comparatorInputSchema", () => {
   it.each([
     { birthYear: 1945, income: 1_000 },
     { birthYear: 2008, income: 10_000_000 },
+    { birthYear: 1996, income: 65_000, parentBirthYear: 1981 },
+    { birthYear: 1996, income: 65_000, parentBirthYear: 1936 },
+    { birthYear: 1996, employment: "not_working" },
   ])("accepts inclusive boundaries %o", (raw) => {
     expect(comparatorInputSchema.safeParse(raw).success).toBe(true);
   });
@@ -130,8 +151,17 @@ describe("resolveBenchmark", () => {
     expect(resolveBenchmark(input({ birthYear: 1945, comparisonMode: "age_25" })).benchmarkYear).toBe(1965);
   });
 
-  it("reports user age and the parent-generation peer's age in the benchmark year", () => {
+  it("reports user age and the parent's age in the benchmark year", () => {
     expect(resolveBenchmark(input({ birthYear: 1990 }))).toMatchObject({ userAge: 36, benchmarkAge: 36 });
+  });
+
+  it.each<[ComparisonMode, number]>([
+    ["parent_peer", 1958 + 36],
+    ["age_25", 1983],
+    ["age_30", 1988],
+  ])("anchors %s on a given parent birth year (1958) to %i", (comparisonMode, expectedYear) => {
+    const resolution = resolveBenchmark(input({ birthYear: 1990, parentBirthYear: 1958, comparisonMode }));
+    expect(resolution).toMatchObject({ benchmarkYear: expectedYear, parentBirthYear: 1958 });
   });
 });
 
@@ -164,6 +194,18 @@ describe("compareGenerations formulas (fixture data)", () => {
     expect(housing.housingParitySalary).toBeCloseTo(80_000);
     expect(housing.priceToIncomeThen).toBeCloseTo(5);
     expect(housing.priceToIncomeNow).toBeCloseTo(400_000 / 65_000);
+  });
+
+  it("card 2 counts a student's years until working into the time to the keys", () => {
+    const studentInput = input({ employment: "student", workStartYear: CURRENT_YEAR + 3 });
+    const [, studentHousing] = compareGenerations(studentInput, FIXTURE_TABLE).cards;
+    expect(studentHousing.yearsUntilWorking).toBe(3);
+    expect(studentHousing.yearsToSaveNow).toBeCloseTo(3 + 64_000 / 9_750);
+  });
+
+  it("counts anyone not working at full-time minimum wage", () => {
+    const { meta } = compareGenerations(input({ employment: "not_working", income: undefined }), FIXTURE_TABLE);
+    expect(meta.income).toBeCloseTo(7.5 * 2080);
   });
 
   it("card 3 converts the milk & eggs basket into labor minutes", () => {
@@ -260,6 +302,16 @@ describe("divergence chart", () => {
 });
 
 describe("buildSharePath", () => {
+  it("keeps the default link unchanged", () => {
+    expect(buildSharePath(input())).toBe("/?by=1996&inc=65000&mode=parent_peer");
+  });
+
+  it("adds the parent year, status and start year only when they apply", () => {
+    const studentInput = input({ birthYear: 2005, parentBirthYear: 1970, employment: "student", workStartYear: 2029 });
+    expect(buildSharePath(studentInput)).toBe("/?by=2005&inc=65000&mode=parent_peer&pb=1970&emp=student&start=2029");
+    expect(buildSharePath(input({ employment: "not_working" }))).toBe("/?by=1996&mode=parent_peer&emp=not_working");
+  });
+
   it("includes the custom year only in custom mode", () => {
     expect(buildSharePath(input({ comparisonMode: "custom", customBenchmarkYear: 1980 }))).toBe(
       "/?by=1996&inc=65000&mode=custom&year=1980",

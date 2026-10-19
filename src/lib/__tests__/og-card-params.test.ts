@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { SEED_METRICS_TABLE } from "@/data/seed-metrics-table";
 import { compareGenerations, inputFromMeta, type ComparatorInput } from "../comparator-engine";
-import { buildOgImagePath, ogOptionsSchema } from "../og-card-params";
+import { buildOgImagePath } from "../og-card-params";
+import { ogOptionsSchema } from "../og-options-schema";
 
 const customInput: ComparatorInput = {
   birthYear: 1990,
@@ -32,6 +33,18 @@ describe("inputFromMeta", () => {
   it("round-trips a custom comparison through the result metadata", () => {
     const { meta } = compareGenerations(customInput, SEED_METRICS_TABLE);
     expect(inputFromMeta(meta)).toEqual(customInput);
+  });
+
+  it("round-trips a student with a known parent", () => {
+    const studentInput: ComparatorInput = {
+      birthYear: 2005,
+      parentBirthYear: 1972,
+      employment: "student",
+      income: 58_000,
+      workStartYear: 2029,
+      comparisonMode: "parent_peer",
+    };
+    expect(inputFromMeta(compareGenerations(studentInput, SEED_METRICS_TABLE).meta)).toEqual(studentInput);
   });
 
   it("omits the custom year for preset modes", () => {

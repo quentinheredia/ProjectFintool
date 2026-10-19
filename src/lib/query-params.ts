@@ -1,11 +1,15 @@
-import { comparatorInputSchema, type ComparatorInput } from "./comparator-engine";
+import type { ComparatorInput } from "./comparator-engine";
+import { comparatorInputSchema } from "./comparator-input";
 
 export type SearchParams = Record<string, string | string[] | undefined>;
 
 /** Short URL keys keep share links compact: `/?by=1996&inc=65000&mode=parent_peer`. */
 const QUERY_KEYS = {
   birthYear: "by",
+  parentBirthYear: "pb",
+  employment: "emp",
   income: "inc",
+  workStartYear: "start",
   comparisonMode: "mode",
   customBenchmarkYear: "year",
 } as const satisfies Record<keyof ComparatorInput, string>;
@@ -31,7 +35,7 @@ export function parseComparisonQuery(params: SearchParams): ComparisonQuery {
   const submitted = Object.fromEntries(
     Object.entries(QUERY_KEYS).map(([field, key]) => [field, firstValue(params[key])]),
   ) as Partial<Record<ComparatorField, string>>;
-  if (submitted.birthYear === undefined && submitted.income === undefined) return { status: "empty" };
+  if (Object.values(submitted).every((value) => value === undefined)) return { status: "empty" };
 
   const result = comparatorInputSchema.safeParse(submitted);
   if (result.success) return { status: "valid", input: result.data };

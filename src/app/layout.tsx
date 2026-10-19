@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: "Parity: your buying power vs your parents'",
   description:
-    "Two inputs, seven cards. See how many hours you work for a home, groceries, land and a car compared with a peer 30 years ago.",
+    "Seven cards. See how many hours you work for a home, groceries, land and a car compared with your parents at your age.",
 };
 
 export const viewport: Viewport = {
